@@ -7,14 +7,16 @@ import os
 import spacy
 import nltk
 from nltk.corpus import wordnet, stopwords
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import word_tokenize, sent_tokenize  # 确保在这里导入
+from nltk.stem import WordNetLemmatizer
+from nltk.parse.corenlp import CoreNLPDependencyParser, CoreNLPParser  # 如果使用，保持引入
 from collections import Counter
 import random
 
 app = Flask(__name__)
 
 # 加载 spaCy 模型用于句子分割
-nlp = spacy.load("en_core_web_sm")
+nlp = spacy.load("en_core_web_md")
 
 # 下载必要的 NLTK 资源
 nltk.download('punkt', quiet=True)
@@ -22,17 +24,12 @@ nltk.download('punkt_tab', quiet=True)
 nltk.download('averaged_perceptron_tagger_eng', quiet=True)
 nltk.download('wordnet', quiet=True)
 nltk.download('stopwords', quiet=True)
+nltk.download('omw-1.4', quiet=True)
 stop_words = set(stopwords.words('english'))
 
 # --- 配置文件处理 ---
 config = configparser.ConfigParser()
 CONFIG_FILE = 'config.ini'
-
-def load_config():
-    """加载配置文件，如果文件不存在则创建。"""
-    if not os.path.exists(CONFIG_FILE):
-        create_default_config()
-    config.read(CONFIG_FILE)
 
 def create_default_config():
     """创建默认配置文件。"""
@@ -46,8 +43,34 @@ def create_default_config():
         'gemini': 'gemini-pro',
         'siliconflow': 'deepseek-ai/DeepSeek-R1'
     }
+    config['SETTINGS'] = {
+        'complexity_preference': 'high',
+        'vocabulary_preference': 'formal',
+        'paraphrase_strategy': 'conservative',
+        'max_synonym_candidates': '3',
+        'similarity_threshold': '0.7',
+        'context_window': '3',
+        'enable_sentence_variation': 'False',  # 新增：是否启用句子结构变化
+    }
     with open(CONFIG_FILE, 'w') as configfile:
         config.write(configfile)
+
+def load_config():
+    """加载配置文件，如果文件不存在则创建。"""
+    if not os.path.exists(CONFIG_FILE):
+        create_default_config()
+    config.read(CONFIG_FILE)
+
+load_config()
+
+@app.route('/get_config', methods=['GET'])
+def get_config_route():
+    """
+    返回当前配置信息。
+    """
+    load_config()  # 也要在这里重新加载！
+    settings_dict = dict(config['SETTINGS'])
+    return jsonify(settings_dict)
 
 load_config()
 
@@ -68,12 +91,15 @@ def load_reference_text(file_path):
     if os.path.exists(file_path):
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
-        words = word_tokenize(text.lower())
-        filtered_words = [word for word in words if word.isalpha() and word not in stop_words]
+        # 使用更精细的句子和单词分词
+        sentences = sent_tokenize(text)  # 添加这一行来定义 sentences
+        words = [word.lower() for sentence in sentences for word in word_tokenize(sentence) if word.isalpha()]
+        filtered_words = [word for word in words if word not in stop_words]
         reference_vocab = Counter(filtered_words)
         print(f"Loaded reference text with {len(reference_vocab)} unique words.")
     else:
         print(f"Reference text file {file_path} not found.")
+
 
 @app.before_request
 def initialize_before_request():
@@ -82,87 +108,276 @@ def initialize_before_request():
     if not is_initialized:
         load_reference_text('reference_text.txt')  # 调整为您的实际文件路径
         is_initialized = True
+        print("Initialized reference text.")
 
-# 新增学术化同义词获取函数，参考文章词汇
-def get_academic_synonyms(word, pos_tag):
-    """获取学术化同义词，优先参考文章词汇，确保词性匹配"""
-    academic_synonyms = []
+# 新增学术化同义词获取函数，参考文章词汇, 更精细的控制
+def get_academic_synonyms(word, pos_tag, context_words, max_candidates=3, similarity_threshold=0.7):
     wordnet_pos = {'NN': 'n', 'VB': 'v', 'JJ': 'a', 'RB': 'r'}.get(pos_tag[:2], None)
-    if not wordnet_pos:
-        return [word]  # 非目标词性保留原词
-    
+    if not wordnet_pos or not context_words:
+        return [word]
+
+    synonyms = set()
     for syn in wordnet.synsets(word, pos=wordnet_pos):
         for lemma in syn.lemmas():
-            synonym = lemma.name().replace('_', ' ')
-            if synonym.isalpha() and len(synonym.split()) == 1 and synonym.lower() != word.lower() and \
-               synonym.lower() not in stop_words and len(synonym) <= 15:
-                academic_synonyms.append(synonym)
+            synonym = lemma.name().replace('_', ' ').lower()
+            if (synonym != word.lower() and synonym.isalpha() and
+                len(synonym.split()) == 1 and synonym not in stop_words and len(synonym) <= 15):
+                synonyms.add(synonym)
     
-    if academic_synonyms:
-        # 按参考文章频率排序
-        prioritized_synonyms = sorted(
-            academic_synonyms,
-            key=lambda x: reference_vocab.get(x.lower(), 0),
-            reverse=True
-        )
-        return prioritized_synonyms[0]  # 返回最高优先级同义词
-    return word  # 无合适同义词时返回原词
+    context_doc = nlp(' '.join(context_words))
+    if not context_doc.has_vector:
+        return [word] if not synonyms else list(synonyms)[:max_candidates]
 
-def adjust_morphology(word, original_tag):
-    """调整同义词的形态以匹配原词的时态或单复数"""
-    lemmatizer = nltk.WordNetLemmatizer()
-    if original_tag.startswith('VB'):
-        if original_tag == 'VBD' or original_tag == 'VBN':  # 过去式或过去分词
-            return lemmatizer.lemmatize(word, 'v') + 'ed'
+    prioritized_synonyms = []
+    for synonym in synonyms:
+        syn_doc = nlp(synonym)
+        if syn_doc.has_vector:
+            word_similarity = nlp(word).similarity(syn_doc)
+            context_similarity = syn_doc.similarity(context_doc)
+            combined_score = word_similarity * context_similarity
+            if word_similarity >= similarity_threshold:
+                prioritized_synonyms.append((synonym, combined_score))
+
+    prioritized_synonyms.sort(key=lambda x: x[1], reverse=True)
+    return [syn[0] for syn in prioritized_synonyms[:max_candidates]] or [word]
+
+
+def adjust_morphology(original_word, synonym, original_tag):
+    """
+    调整同义词的形态以匹配原词的时态或单复数。
+    使用 WordNetLemmatizer，并处理不规则变化。
+    """
+    lemmatizer = WordNetLemmatizer()
+
+    if original_tag.startswith('VB'):  # 动词
+        if original_tag == 'VBD':  # 过去式
+            return lemmatizer.lemmatize(synonym, 'v') + 'ed'
         elif original_tag == 'VBG':  # 现在分词
-            return lemmatizer.lemmatize(word, 'v') + 'ing'
-        elif original_tag == 'VBZ':  # 第三人称单数
-            return lemmatizer.lemmatize(word, 'v') + 's'
-        else:  # 其他动词形式
-            return lemmatizer.lemmatize(word, 'v')
-    elif original_tag.startswith('NN') and original_tag.endswith('S'):  # 复数名词
-        return lemmatizer.lemmatize(word, 'n') + 's'
-    return word
+            return lemmatizer.lemmatize(synonym, 'v') + 'ing'
+        elif original_tag == 'VBN':  # 过去分词
+            # 对于不规则动词，WordNetLemmatizer 可能无法正确处理，这里尝试做一些改进
+            past_participle = lemmatizer.lemmatize(synonym, 'v')
+            if past_participle == synonym:  # 如果没有变化，可能是原形，尝试加ed
+                 past_participle = synonym + 'ed'
+            return past_participle
+        elif original_tag == 'VBZ': # 第三人称单数
+            return lemmatizer.lemmatize(synonym, 'v') + 's'
+        else: # 其他动词形式
+            return lemmatizer.lemmatize(synonym, 'v')
+
+
+    elif original_tag.startswith('NN'):  # 名词
+        if original_tag.endswith('S'):  # 复数
+            # 更可靠的复数形式处理 (但仍可能有少数不规则复数处理不好)
+            return lemmatizer.lemmatize(synonym, 'n') + 's'
+        else: # 单数
+            return lemmatizer.lemmatize(synonym, 'n')
+    return synonym
+
+def vary_sentence_structure(doc):
+    """
+    通过调整句子结构来增加文本的多样性。
+    """
+    sentences = list(doc.sents)
+    new_sentences = []
+    complexity_preference = config.get('SETTINGS', 'complexity_preference', fallback='high')  # 从配置读取
+
+    i = 0
+    while i < len(sentences):
+        sent = sentences[i]
+        if complexity_preference == 'high' and i + 1 < len(sentences):
+            next_sent = sentences[i+1]
+            if len(sent) < 20 and len(next_sent) < 20:
+                combined = f"{sent.text.rstrip('.?!')} and {next_sent.text}"
+                new_sentences.append(combined)
+                i += 2
+                continue
+        elif complexity_preference == 'low' and len(sent) > 30:
+            for token in sent:
+                if token.dep_ in ('cc', 'relcl'):
+                    first_part = sent[:token.i - sent.start].text
+                    second_part = sent[token.i - sent.start:].text
+                    new_sentences.extend([first_part, second_part])
+                    i += 1
+                    break  # 添加 break 以避免重复处理
+            else:
+                new_sentences.append(sent.text)
+                i += 1
+        new_sentences.append(sent.text)
+        i += 1
+
+    return " ".join(new_sentences)
+
+def introduce_discourse_markers(text):
+    """
+    引入话语标记（discourse markers）来增强句子之间的连贯性。
+    """
+    # 更全面的话语标记列表，根据语义关系分类
+    markers = {
+        'addition': ['furthermore', 'moreover', 'in addition', 'besides', 'also', 'additionally'],
+        'contrast': ['however', 'nevertheless', 'nonetheless', 'on the other hand', 'conversely', 'by contrast', 'yet'],
+        'cause': ['because', 'since', 'as', 'due to', 'owing to'],
+        'effect': ['therefore', 'thus', 'consequently', 'as a result', 'hence', 'accordingly'],
+        'example': ['for example', 'for instance', 'such as', 'to illustrate', 'namely'],
+        'emphasis': ['indeed', 'in fact', 'certainly', 'notably', 'especially'],
+        'conclusion': ['in conclusion', 'to conclude', 'to summarize', 'in summary', 'finally'],
+        'sequence': ['firstly', 'secondly', 'thirdly', 'next', 'then', 'finally', 'subsequently'],
+        'clarification': ['in other words', 'that is to say', 'specifically', 'to clarify', 'put differently'],
+    }
+    sentences = sent_tokenize(text)
+    new_sentences = []
+
+    for i, sentence in enumerate(sentences):
+        new_sentences.append(sentence)
+        if i < len(sentences) - 1:
+            # 基于与下一句的关系选择合适的话语标记 (需要更复杂的逻辑, 这里只是简单示例)
+            next_sentence = sentences[i+1]
+
+            # 示例：检测因果关系 (非常简化)
+            if "because" in next_sentence.lower() or "since" in next_sentence.lower() or "due to" in next_sentence.lower():
+                marker = random.choice(markers['cause'])
+                new_sentences.append(f"{marker}, ")
+
+            # 示例: 检测对比关系
+            elif "but" in next_sentence.lower() or "however" in next_sentence.lower():
+                 marker = random.choice(markers['contrast'])
+                 new_sentences.append(f"{marker}, ")
+
+            # 示例: 补充关系
+            elif i > 0:
+                marker = random.choice(markers['addition'])
+                new_sentences.append(f"{marker}, ")
+    return " ".join(new_sentences)
+
+
 
 def paraphrase_text_local(sentence):
-    """学术化改写句子，确保语法正确和流畅性"""
-    # 使用 NLTK 分词和词性标注
-    words = word_tokenize(sentence)
+    """
+    学术化改写句子，更注重保持原意和流畅度。
+    """
+    doc = nlp(sentence)
+    words = [token.text for token in doc]
     pos_tags = nltk.pos_tag(words)
     new_tokens = []
 
-    # 使用 spaCy 解析依存关系
-    doc = nlp(sentence)
-    token_deps = {token.text: (token.dep_, token.head.text) for token in doc}
+    # 从配置文件读取参数
+    paraphrase_strategy = config.get('SETTINGS', 'paraphrase_strategy', fallback='conservative')
+    max_synonym_candidates = int(config.get('SETTINGS', 'max_synonym_candidates', fallback=3))
+    similarity_threshold = float(config.get('SETTINGS', 'similarity_threshold', fallback=0.7))
+    context_window = int(config.get('SETTINGS', 'context_window', fallback=3))
+    enable_sentence_variation = config.getboolean('SETTINGS', 'enable_sentence_variation', fallback=False) # 读取启用标志
+    lemmatizer = WordNetLemmatizer()
+    # ... (同义词替换等逻辑，与之前版本相同) ...
+    for i, (word, tag) in enumerate(pos_tags):
+        token = doc[i]
 
-    for word, tag in pos_tags:
         if tag.startswith(('NN', 'VB', 'JJ', 'RB')) and word.lower() not in stop_words:
-            # 检查依存关系，避免破坏关键结构
-            dep_info = token_deps.get(word, ('', ''))
-            if dep_info[0] in ('ROOT', 'nsubj', 'dobj'):  # 保留主语、谓语、宾语
+            # --- 更严格的依存关系保护 ---
+            if token.dep_ in ('nsubj', 'nsubjpass', 'dobj', 'ROOT', 'pobj', 'csubj', 'csubjpass', 'expl'):  # 增加更多核心成分
                 new_tokens.append(word)
-            else:
-                synonym = get_academic_synonyms(word, tag)
-                adjusted_word = adjust_morphology(synonym, tag)
+                continue
+
+            # 获取上下文单词
+            start = max(0, i - context_window)
+            end = min(len(words), i + context_window + 1)
+            context_words = [words[j] for j in range(start, end) if j != i] # 排除自身
+
+            synonyms = get_academic_synonyms(word, tag, context_words, max_synonym_candidates, similarity_threshold)
+
+            if synonyms:
+                # 策略：选择最佳同义词 (保守策略)
+                synonym = synonyms[0]  #  选择评分最高的
+                adjusted_word = adjust_morphology(word, synonym, tag)
                 new_tokens.append(adjusted_word)
+            else:
+                new_tokens.append(word)
         else:
             new_tokens.append(word)
 
-    # 初步重组句子
+    # --- 基于规则的后处理 (更全面的语法检查) ---
     paraphrased_text = ' '.join(new_tokens)
-
-    # 使用 spaCy 后处理，确保语法正确
     paraphrased_doc = nlp(paraphrased_text)
     final_sentence = []
-    for token in paraphrased_doc:
-        # 修正冠词缺失（简单规则）
-        if token.dep_ == 'det' and token.text.lower() not in ('a', 'an', 'the'):
-            final_sentence.append('the')  # 默认补 'the'
-        else:
-            final_sentence.append(token.text)
+
+    for i, token in enumerate(paraphrased_doc):
+        # 1. 冠词检查 (更精细)
+        if token.pos_ == 'NOUN' and token.dep_ != 'compound':
+            if i > 0:
+                prev_token = paraphrased_doc[i - 1]
+                if prev_token.text.lower() not in ('a', 'an', 'the'):
+                    if token.text[0].lower() in 'aeiou':
+                        final_sentence.append('an')
+                    else:
+                        final_sentence.append('a')
+
+        # 2. 动词一致性检查 (简单规则)
+        elif token.tag_ == 'VBZ' and i > 0:
+            prev_token = paraphrased_doc[i-1]
+            if prev_token.tag_ not in ('NN', 'PRP', 'NNP') or prev_token.text.lower() == 'i':  # 简单的主谓一致
+                # 尝试还原为原形
+                lemma = lemmatizer.lemmatize(token.text, 'v')
+                final_sentence.append(lemma)
+                continue
+
+        # 3. 介词搭配检查 (非常有限，需要更复杂的规则库或模型)
+        elif token.pos_ == 'ADP':  # 介词
+             if token.text.lower() == 'in' and i > 0:
+                 prev_token = paraphrased_doc[i-1]
+                 if prev_token.pos_ == "VERB" and prev_token.lemma_ not in ("be", "result", "consist", "participate", "believe", "succeed"):
+                      # 如果前面的动词通常不与 "in" 搭配, 尝试替换为其他介词 (这里非常简化)
+                      final_sentence.append("of") # 示例替换
+                      continue
+        final_sentence.append(token.text)
 
     final_text = ' '.join(final_sentence)
+
+
+    # 引入话语标记
+    final_text = introduce_discourse_markers(final_text)
+
+    # 根据标志决定是否进行句子结构变化
+    if enable_sentence_variation:
+        final_text = vary_sentence_structure(nlp(final_text))
+
     return final_text[0].upper() + final_text[1:]
+
+
+@app.route('/update_config', methods=['POST'])
+def update_config_route():
+    """
+    接收前端发送的配置更新请求，并更新配置文件。
+    """
+    new_config = request.get_json()
+
+    # 验证配置项的合法性
+    valid_settings = {
+        'complexity_preference': ['high', 'medium', 'low'],
+        'vocabulary_preference': ['formal', 'semi-formal', 'informal'],
+        'paraphrase_strategy': ['conservative', 'balanced', 'aggressive'],
+        'max_synonym_candidates': lambda x: x.isdigit() and 1 <= int(x) <= 10,
+        'similarity_threshold': lambda x: x.replace('.', '', 1).isdigit() and 0 <= float(x) <= 1,
+        'context_window': lambda x: x.isdigit() and 1 <= int(x) <= 10,
+        'enable_sentence_variation': lambda x: str(x).lower() in ('true', 'false')  # 修改为 lambda 函数，接受大小写
+    }
+
+    for key, value in new_config.items():
+        if key not in valid_settings:
+            return jsonify({'error': f'Invalid config key: {key}'}), 400
+        if isinstance(valid_settings[key], list) and value not in valid_settings[key]:
+            return jsonify({'error': f'Invalid value for {key}: {value}'}), 400
+        if callable(valid_settings[key]) and not valid_settings[key](value):
+            return jsonify({'error': f'Invalid value for {key}: {value}'}), 400
+
+        # 规范化 enable_sentence_variation 的值
+        if key == 'enable_sentence_variation':
+            value = 'True' if str(value).lower() == 'true' else 'False'  # 转换为大写形式
+        config['SETTINGS'][key] = value
+
+    # 更新 config.ini 文件
+    with open(CONFIG_FILE, 'w') as configfile:
+        config.write(configfile)
+
+    return jsonify({'message': 'Config updated successfully'})
 
 # API 调用函数
 def call_deepseek_api(api_key, model, prompt, text):
@@ -514,6 +729,7 @@ def process_text():
         response_data["siliconflow_balance"] = get_siliconflow_balance(siliconflow_api_key) or "N/A"
 
     return jsonify(response_data)
+
 
 # 运行 Flask 应用
 if __name__ == '__main__':

@@ -4,7 +4,7 @@ $(document).ready(function() {
     // 估计的总迭代次数 (可以根据经验调整)
     const estimatedTotalIterations = 5;
 
-    // 获取 Gemini 模型列表的函数
+    // --- 模型列表获取函数 (保持不变) ---
     function fetchGeminiModels() {
         var geminiApiKey = $('#geminiApiKey').val();
         $('#geminiModelAlert').hide();
@@ -47,14 +47,13 @@ $(document).ready(function() {
         });
     }
 
-    // 刷新Gemini模型列表按钮点击事件
+    // 刷新Gemini模型列表按钮点击事件 (保持不变)
     $('#refreshGeminiModels').click(function() {
         $(this).find('i').addClass('fa-spin');
         fetchGeminiModels();
         $(this).find('i').removeClass('fa-spin');
     });
 
-    // 获取 SiliconFlow 模型列表的函数
     function fetchSiliconFlowModels() {
         var siliconFlowApiKey = $('#siliconFlowApiKey').val();
         $('#siliconFlowModelAlert').hide();
@@ -97,14 +96,14 @@ $(document).ready(function() {
         });
     }
 
-    // 刷新 SiliconFlow 模型列表按钮点击事件
+      // 刷新 SiliconFlow 模型列表按钮点击事件 (保持不变)
     $('#refreshSiliconFlowModels').click(function() {
         $(this).find('i').addClass('fa-spin');
         fetchSiliconFlowModels();
         $(this).find('i').removeClass('fa-spin');
     });
 
-    // 改写模型选择改变事件
+    // 改写模型选择改变事件 (保持不变)
     $('#rewriteModelSelect').change(function() {
         var selectedModel = $(this).val();
         $('#geminiApiKeyGroup').hide();
@@ -122,7 +121,7 @@ $(document).ready(function() {
         }
     });
 
-    // AI 检测器选择改变事件
+    // AI 检测器选择改变事件 (保持不变)
     $('#detectorSelect').change(function() {
         if ($(this).val() === 'sapling') {
             $('#saplingApiKeyGroup').show();
@@ -133,6 +132,64 @@ $(document).ready(function() {
         }
     });
 
+
+    // --- 新增：配置项 UI 更新 ---
+
+    // 从服务器获取当前配置
+    function fetchCurrentConfig() {
+        $.ajax({
+            url: '/get_config',  // 新增的后端路由，用于获取配置
+            type: 'GET',
+            success: function(data) {
+                // 更新 UI
+                $('#complexityPreference').val(data.complexity_preference);
+                $('#vocabularyPreference').val(data.vocabulary_preference);
+                $('#paraphraseStrategy').val(data.paraphrase_strategy);
+                $('#maxSynonymCandidates').val(data.max_synonym_candidates);
+                $('#similarityThreshold').val(data.similarity_threshold);
+                $('#contextWindow').val(data.context_window);
+                $('#enableSentenceVariation').prop('checked', data.enable_sentence_variation === 'True'); // 注意这里
+            },
+            error: function(xhr, status, error) {
+                console.error("获取配置失败:", error);
+            }
+        });
+    }
+    // 页面加载时获取初始配置
+    fetchCurrentConfig();
+
+    // 保存配置按钮点击事件
+    $('#saveConfigBtn').click(function() {
+        var newConfig = {
+            complexity_preference: $('#complexityPreference').val(),
+            vocabulary_preference: $('#vocabularyPreference').val(),
+            paraphrase_strategy: $('#paraphraseStrategy').val(),
+            max_synonym_candidates: $('#maxSynonymCandidates').val(),
+            similarity_threshold: $('#similarityThreshold').val(),
+            context_window: $('#contextWindow').val(),
+            enable_sentence_variation: $('#enableSentenceVariation').is(':checked').toString() // 转换为字符串
+        };
+
+        $.ajax({
+            url: '/update_config',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(newConfig),
+            success: function(data) {
+                alert('配置已保存!');
+                 fetchCurrentConfig(); // 重新获取配置以更新UI
+            },
+            error: function(xhr, status, error) {
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                  alert("保存配置失败: " + xhr.responseJSON.error);
+                } else {
+                   alert('保存配置失败: ' + error);
+                }
+
+            }
+        });
+    });
+    // --- 其余部分 (提交按钮点击事件、更新加载状态函数等) ---
     // 提交按钮点击事件
     $('#submitBtn').click(function() {
         // 获取用户输入
@@ -287,7 +344,7 @@ $(document).ready(function() {
     $('#rewriteModelSelect').trigger('change');
     $('#detectorSelect').trigger('change');
 
-    // 更新加载状态的函数
+    // 更新加载状态的函数 (保持不变)
     function updateLoadingStatus(stage, iteration, currentSentence) {
         var elapsedTime = (new Date().getTime() - startTime) / 1000;
         var estimatedTimePerIteration = elapsedTime / (iteration + 1);

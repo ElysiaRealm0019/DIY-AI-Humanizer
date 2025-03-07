@@ -12,6 +12,10 @@
             color: red;
             font-weight: bold;
         }
+        /* 新增：配置区域样式 */
+        #configAccordion .card-header {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -28,7 +32,6 @@
             <textarea class="form-control" id="prompt" rows="3"></textarea>
         </div>
 
-        <!-- 改写模型选择 -->
         <div class="form-group">
             <label for="rewriteModelSelect">选择改写模型:</label>
             <select class="form-control" id="rewriteModelSelect">
@@ -38,7 +41,6 @@
             </select>
         </div>
 
-        <!-- Gemini API 输入组 -->
         <div class="form-group" id="geminiApiKeyGroup" style="display: none;">
             <label for="geminiApiKey">Gemini API Key:</label>
             <div class="input-group">
@@ -57,11 +59,9 @@
             <label for="geminiModel">Gemini 模型:</label>
             <select class="form-control" id="geminiModel">
                 <option value="" selected>选择模型</option>
-                <!-- 动态填充选项 -->
-            </select>
+                </select>
         </div>
 
-        <!-- SiliconFlow API 输入组 -->
         <div class="form-group" id="siliconFlowApiKeyGroup" style="display: none;">
             <label for="siliconFlowApiKey">SiliconFlow API Key:</label>
             <div class="input-group">
@@ -80,8 +80,7 @@
             <label for="siliconFlowModel">SiliconFlow 模型:</label>
             <select class="form-control" id="siliconFlowModel">
                 <option value="" selected>选择模型</option>
-                <!-- 动态填充选项 -->
-            </select>
+                </select>
         </div>
 
         <div class="form-group">
@@ -113,7 +112,65 @@
             <input type="number" class="form-control" id="paragraphThreshold" value="0.5" step="0.01" min="0" max="1" title="范围：0-1，Sapling 低=人类，Winston 高=人类">
         </div>
 
-        <button class="btn btn-primary" id="submitBtn">
+        <div class="accordion" id="configAccordion">
+            <div class="card">
+                <div class="card-header" id="configHeading">
+                    <h2 class="mb-0">
+                        <button class="btn btn-link btn-block text-left" type="button" data-toggle="collapse" data-target="#configCollapse" aria-expanded="true" aria-controls="configCollapse">
+                            本地模型配置
+                        </button>
+                    </h2>
+                </div>
+
+                <div id="configCollapse" class="collapse" aria-labelledby="configHeading" data-parent="#configAccordion">
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="complexityPreference">句法复杂度偏好:</label>
+                            <select class="form-control" id="complexityPreference">
+                                <option value="high">高</option>
+                                <option value="medium">中</option>
+                                <option value="low">低</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="vocabularyPreference">词汇偏好:</label>
+                            <select class="form-control" id="vocabularyPreference">
+                                <option value="formal">正式</option>
+                                <option value="semi-formal">半正式</option>
+                                <option value="informal">非正式</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="paraphraseStrategy">改写策略:</label>
+                            <select class="form-control" id="paraphraseStrategy">
+                                <option value="conservative">保守</option>
+                                <option value="balanced">平衡</option>
+                                <option value="aggressive">激进</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="maxSynonymCandidates">最大同义词候选数:</label>
+                            <input type="number" class="form-control" id="maxSynonymCandidates" value="3" min="1" max="10">
+                        </div>
+                        <div class="form-group">
+                            <label for="similarityThreshold">同义词相似度阈值:</label>
+                            <input type="number" class="form-control" id="similarityThreshold" value="0.7" step="0.01" min="0" max="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="contextWindow">上下文窗口大小:</label>
+                            <input type="number" class="form-control" id="contextWindow" value="3" min="1" max="10">
+                        </div>
+                        <div class="form-group form-check">
+                            <input type="checkbox" class="form-check-input" id="enableSentenceVariation">
+                            <label class="form-check-label" for="enableSentenceVariation">启用句子结构变化</label>
+                        </div>
+
+                        <button class="btn btn-secondary" id="saveConfigBtn">保存配置</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button class="btn btn-primary mt-3" id="submitBtn">
             <span id="submitBtnText">提交</span>
             <span id="submitBtnSpinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
         </button>
@@ -133,5 +190,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="/static/js/script.js"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'91c824ebfb8153b7',t:'MTc0MTMzMDA3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+    <script>(function(){function c(){var b=document.getElementsByTagName('iframe')[0];if(b){var d=b.contentDocument||b.contentWindow.document;if(d){var e=d.createElement('script');e.innerHTML="window.__CF$cv$params={r:'91c824ebfb8153b7',t:'MTc0MTMzMDA3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";d.getElementsByTagName('head')[0].appendChild(e)}}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var f=document.onreadystatechange||function(){};document.onreadystatechange=function(b){f(b);'loading'!==document.readyState&&(document.onreadystatechange=f,c())}}}else{c()}})();</script>
+</body>
 </html>
