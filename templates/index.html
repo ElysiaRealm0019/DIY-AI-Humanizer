@@ -28,7 +28,18 @@
             <textarea class="form-control" id="prompt" rows="3"></textarea>
         </div>
 
+        <!-- 改写模型选择 -->
         <div class="form-group">
+            <label for="rewriteModelSelect">选择改写模型:</label>
+            <select class="form-control" id="rewriteModelSelect">
+                <option value="gemini">Gemini</option>
+                <option value="siliconflow">SiliconFlow</option>
+                <option value="local">Local</option>
+            </select>
+        </div>
+
+        <!-- Gemini API 输入组 -->
+        <div class="form-group" id="geminiApiKeyGroup" style="display: none;">
             <label for="geminiApiKey">Gemini API Key:</label>
             <div class="input-group">
                 <input type="text" class="form-control" id="geminiApiKey" value="{{ config.get('API_KEYS', 'gemini', fallback='') }}">
@@ -42,14 +53,16 @@
             <div class="alert alert-warning mt-2" id="geminiModelAlert" style="display: none;"></div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="geminiModelGroup" style="display: none;">
             <label for="geminiModel">Gemini 模型:</label>
             <select class="form-control" id="geminiModel">
-                <option value="{{ config.get('MODELS', 'gemini', fallback='') }}" selected>{{ config.get('MODELS', 'gemini', fallback='未选择') }}</option>
+                <option value="" selected>选择模型</option>
+                <!-- 动态填充选项 -->
             </select>
         </div>
 
-        <div class="form-group">
+        <!-- SiliconFlow API 输入组 -->
+        <div class="form-group" id="siliconFlowApiKeyGroup" style="display: none;">
             <label for="siliconFlowApiKey">SiliconFlow API Key:</label>
             <div class="input-group">
                 <input type="text" class="form-control" id="siliconFlowApiKey" value="{{ config.get('API_KEYS', 'siliconflow', fallback='') }}">
@@ -59,15 +72,15 @@
                     </button>
                 </div>
             </div>
-            <small>当前用量：<span id="siliconFlowUsage">0</span></small>
-            <small>当前余额：<span id="siliconFlowBalance"></span></small>
+            <small>当前用量：<span id="siliconFlowUsage">0</span> | 当前余额：<span id="siliconFlowBalance">N/A</span></small>
             <div class="alert alert-warning mt-2" id="siliconFlowModelAlert" style="display: none;"></div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="siliconFlowModelGroup" style="display: none;">
             <label for="siliconFlowModel">SiliconFlow 模型:</label>
             <select class="form-control" id="siliconFlowModel">
-                <option value="{{ config.get('MODELS', 'siliconflow', fallback='') }}" selected>{{ config.get('MODELS', 'siliconflow', fallback='未选择') }}</option>
+                <option value="" selected>选择模型</option>
+                <!-- 动态填充选项 -->
             </select>
         </div>
 
@@ -88,8 +101,7 @@
         <div class="form-group" id="winstonApiKeyGroup" style="display: none;">
             <label for="winstonApiKey">Winston AI API Key:</label>
             <input type="text" class="form-control" id="winstonApiKey" value="{{ config.get('API_KEYS', 'winston', fallback='') }}">
-            <small>当前用量：<span id="winstonUsage">0</span></small>
-            <small>剩余额度：<span id="winstonBalance"></span></small>
+            <small>当前用量：<span id="winstonUsage">0</span> | 剩余额度：<span id="winstonBalance">N/A</span></small>
         </div>
 
         <div class="form-group">
@@ -121,5 +133,5 @@
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="/static/js/script.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'91c824ebfb8153b7',t:'MTc0MTMzMDA3NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
