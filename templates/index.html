@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Humanizer</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        #currentSentence {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Humanizer</h1>
+
+        <div class="form-group">
+            <label for="inputText">输入文本:</label>
+            <textarea class="form-control" id="inputText" rows="5"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="prompt">Prompt:</label>
+            <textarea class="form-control" id="prompt" rows="3"></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="geminiApiKey">Gemini API Key:</label>
+            <div class="input-group">
+                <input type="text" class="form-control" id="geminiApiKey" value="{{ config.get('API_KEYS', 'gemini', fallback='') }}">
+                <div class="input-group-append">
+                    <button class="btn btn-outline-secondary" type="button" id="refreshGeminiModels">
+                        <i class="fas fa-sync-alt"></i> 刷新模型
+                    </button>
+                </div>
+            </div>
+            <small>当前用量：<span id="geminiUsage">0</span></small>
+            <div class="alert alert-warning mt-2" id="geminiModelAlert" style="display: none;"></div>
+        </div>
+
+        <div class="form-group">
+            <label for="geminiModel">Gemini 模型:</label>
+            <select class="form-control" id="geminiModel">
+                <option value="{{ config.get('MODELS', 'gemini', fallback='') }}" selected>{{ config.get('MODELS', 'gemini', fallback='未选择') }}</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="siliconFlowApiKey">SiliconFlow API Key:</label>
+            <div class="input-group">
+                <input type="text" class="form-control" id="siliconFlowApiKey" value="{{ config.get('API_KEYS', 'siliconflow', fallback='') }}">
+                <div class="input-group-append">
+                    <button class="btn btn-outline-secondary" type="button" id="refreshSiliconFlowModels">
+                        <i class="fas fa-sync-alt"></i> 刷新模型
+                    </button>
+                </div>
+            </div>
+            <small>当前用量：<span id="siliconFlowUsage">0</span></small>
+            <small>当前余额：<span id="siliconFlowBalance"></span></small>
+            <div class="alert alert-warning mt-2" id="siliconFlowModelAlert" style="display: none;"></div>
+        </div>
+
+        <div class="form-group">
+            <label for="siliconFlowModel">SiliconFlow 模型:</label>
+            <select class="form-control" id="siliconFlowModel">
+                <option value="{{ config.get('MODELS', 'siliconflow', fallback='') }}" selected>{{ config.get('MODELS', 'siliconflow', fallback='未选择') }}</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="detectorSelect">AI 检测器:</label>
+            <select class="form-control" id="detectorSelect">
+                <option value="sapling">Sapling</option>
+                <option value="winston">Winston AI</option>
+            </select>
+        </div>
+
+        <div class="form-group" id="saplingApiKeyGroup">
+            <label for="saplingApiKey">Sapling API Key:</label>
+            <input type="text" class="form-control" id="saplingApiKey" value="{{ config.get('API_KEYS', 'sapling', fallback='') }}">
+            <small>当前用量：<span id="saplingUsage">0</span></small>
+        </div>
+
+        <div class="form-group" id="winstonApiKeyGroup" style="display: none;">
+            <label for="winstonApiKey">Winston AI API Key:</label>
+            <input type="text" class="form-control" id="winstonApiKey" value="{{ config.get('API_KEYS', 'winston', fallback='') }}">
+            <small>当前用量：<span id="winstonUsage">0</span></small>
+            <small>剩余额度：<span id="winstonBalance"></span></small>
+        </div>
+
+        <div class="form-group">
+            <label for="sentenceThreshold">句子重写阈值:</label>
+            <input type="number" class="form-control" id="sentenceThreshold" value="0.8" step="0.01" min="0" max="1" title="范围：0-1，Sapling 高=AI，Winston 低=AI">
+        </div>
+        <div class="form-group">
+            <label for="paragraphThreshold">段落重写阈值:</label>
+            <input type="number" class="form-control" id="paragraphThreshold" value="0.5" step="0.01" min="0" max="1" title="范围：0-1，Sapling 低=人类，Winston 高=人类">
+        </div>
+
+        <button class="btn btn-primary" id="submitBtn">
+            <span id="submitBtnText">提交</span>
+            <span id="submitBtnSpinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+        </button>
+
+        <div class="alert alert-danger mt-3" id="errorAlert" style="display: none;"></div>
+
+        <h2>结果:</h2>
+
+        <div id="resultsLoading" class="text-center" style="display: none;">
+            <i class="fas fa-spinner fa-spin fa-2x"></i>
+            <p id="loadingStatus">正在加载...</p>
+        </div>
+        <div class="container mt-5" id="resultsContainer"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="/static/js/script.js"></script>
+</body>
+</html>
